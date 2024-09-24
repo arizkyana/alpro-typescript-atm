@@ -13,10 +13,11 @@ interface Account {
   email: string;
   balance: number;
   isBlocked?: boolean;
-  atmCard?: AtmCard;
 }
 
 interface AtmCard {
+  id: string;
+  account: Account;
   pin: string;
   atmNumber: string;
 }
@@ -28,10 +29,6 @@ const accountA: Account = {
   email: "agung@mail.com",
   phone: "0812341234",
   balance: 1000,
-  atmCard: {
-    atmNumber: "ATM001",
-    pin: "123456",
-  },
 };
 
 const accountB: Account = {
@@ -41,13 +38,23 @@ const accountB: Account = {
   email: "rizky@mail.com",
   phone: "0812355555",
   balance: 1500,
-  atmCard: {
-    atmNumber: "ATM002",
-    pin: "555555",
-  },
 };
 
-const accountDatabase: Account[] = [accountA, accountB];
+const cardAccountA: AtmCard = {
+  id: "1",
+  account: accountA,
+  atmNumber: "ATM001",
+  pin: "123456",
+};
+
+const cardAccountB: AtmCard = {
+  id: "2",
+  account: accountB,
+  atmNumber: "ATM002",
+  pin: "123456",
+};
+
+const cardAccountDatabase: AtmCard[] = [cardAccountA, cardAccountB];
 
 // login
 async function login(): Promise<boolean | Account> {
@@ -60,11 +67,11 @@ async function login(): Promise<boolean | Account> {
   const valPin: string = await userInput<string>("Input your pin: ");
 
   // find account with that valAtmNumber
-  const findAccountByAtmNumber = accountDatabase.find((item: Account) => {
+  const findAccountByAtmNumber = cardAccountDatabase.find((item: AtmCard) => {
     return (
-      item.atmCard?.pin === valPin &&
-      item?.atmCard.atmNumber === valAtmNumber &&
-      !item?.isBlocked
+      item.pin === valPin &&
+      item.atmNumber === valAtmNumber &&
+      !item?.account.isBlocked
     );
   });
 
@@ -72,7 +79,7 @@ async function login(): Promise<boolean | Account> {
     return false;
   }
 
-  return findAccountByAtmNumber;
+  return findAccountByAtmNumber?.account;
 }
 
 // cek saldo (checkBalance)
@@ -95,10 +102,10 @@ async function withdraw(account: Account) {
   updatedAccount.balance = updatedAccount.balance - valAmount;
 
   // find index of this account in database
-  const accountIndex = accountDatabase.findIndex(
-    (item) => item.id === account.id
+  const cardIndex = cardAccountDatabase.findIndex(
+    (item) => item.account.id === account.id
   );
-  accountDatabase[accountIndex] = updatedAccount;
+  cardAccountDatabase[cardIndex].account = updatedAccount;
 
   console.log(`Withdraw ${valAmount} success!\n`);
 
@@ -106,7 +113,27 @@ async function withdraw(account: Account) {
 }
 
 // transfer
-function transfer(account: Account) {}
+async function transfer(account: Account) {
+  const valAccountDestination: string = await userInput(
+    "input destination account number: "
+  );
+
+  const cardIndex = cardAccountDatabase.findIndex((item) => {
+    return item.account.accountNumber === valAccountDestination;
+  });
+
+  if (cardIndex <= 0) {
+    console.log("account not found, please try again...");
+    transfer(account);
+  }
+
+  const valTransferAmount: number = await userInput("transfer amount ");
+
+  const selectedDestinationAccount = {
+    ...cardAccountDatabase[cardIndex].account,
+    balance: cardAccountDatabase[cardIndex].account.balance + valTransferAmount,
+  } as Account;
+}
 
 // bayar (payment)
 function payment(account: Account) {}
@@ -126,7 +153,8 @@ async function showMenu(account: Account) {
   console.log("3. transfer");
   console.log("4. payment");
   console.log("5. change pin");
-  console.log("6. exit");
+  console.log("6. logout");
+  console.log("7. exit");
   console.log("-----------------\n");
 
   const selectedMenu: string = await userInput("Choose menu: ");
@@ -149,10 +177,11 @@ async function showMenu(account: Account) {
       changePin(account);
       break;
     case "6":
+      login();
+    case "7":
       exit();
       break;
     default:
-      console.log("menu not found");
       showMenu(account);
       break;
   }
@@ -166,14 +195,24 @@ async function userInput<T>(question: string): Promise<T> {
   });
 }
 
+let loginAttempt: number = 0;
+
 async function main() {
   //   showMenu();
+
+  if (loginAttempt >= 3) {
+    console.log(`You have been try 3 times.`);
+    exit();
+  }
+
   const isAuthenticated = await login();
   if (isAuthenticated) {
     const account = isAuthenticated as Account;
     showMenu(account);
   } else {
-    exit();
+    loginAttempt += 1;
+    console.log(`your card number and pin is invalid. ${loginAttempt}`);
+    main();
   }
 }
 
