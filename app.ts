@@ -22,6 +22,12 @@ interface AtmCard {
   atmNumber: string;
 }
 
+interface Bill {
+  label: string;
+  amount: number;
+  periode: string[];
+}
+
 const accountA: Account = {
   id: "1",
   name: "Agung",
@@ -54,10 +60,28 @@ const cardAccountB: AtmCard = {
   pin: "123456",
 };
 
-const cardAccountDatabase: AtmCard[] = [cardAccountA, cardAccountB];
+const billDatabase: Bill[] = [
+  {
+    label: "Electricity",
+    amount: 200,
+    periode: ["25/08/2024", "25/09/2024"],
+  },
+  {
+    label: "Internet and Phone",
+    amount: 150,
+    periode: ["25/08/2024", "25/09/2024"],
+  },
+  {
+    label: "Credit Card",
+    amount: 50,
+    periode: ["25/08/2024", "25/09/2024"],
+  },
+];
+
+let cardAccountDatabase: AtmCard[] = [cardAccountA, cardAccountB];
 
 // login
-async function login(): Promise<boolean | Account> {
+async function login(): Promise<boolean | { account: Account; card: AtmCard }> {
   console.log("Welcome to ABC Bank");
   console.log("Please insert your ATM Card");
 
@@ -79,22 +103,25 @@ async function login(): Promise<boolean | Account> {
     return false;
   }
 
-  return findAccountByAtmNumber?.account;
+  return {
+    account: findAccountByAtmNumber?.account,
+    card: findAccountByAtmNumber,
+  };
 }
 
 // cek saldo (checkBalance)
-function checkBalance(account: Account) {
+function checkBalance(account: Account, card: AtmCard) {
   console.log("Your current balance is: ", account.balance);
-  showMenu(account);
+  showMenu(account, card);
 }
 
 // ambil uang (withdraw)
-async function withdraw(account: Account) {
+async function withdraw(account: Account, card: AtmCard) {
   const valAmount: number = await userInput("input amount withdrawal: ");
 
-  if (valAmount > account.balance) {
+  if (!isBalanceMoreThanExpectedAmount(account, valAmount)) {
     console.log("insufficent balance, please try again...");
-    return withdraw(account);
+    return withdraw(account, card);
   }
 
   const updatedAccount = { ...account };
@@ -109,11 +136,11 @@ async function withdraw(account: Account) {
 
   console.log(`Withdraw ${valAmount} success!\n`);
 
-  checkBalance(updatedAccount);
+  checkBalance(updatedAccount, card);
 }
 
 // transfer
-async function transfer(account: Account) {
+async function transfer(account: Account, card: AtmCard) {
   const valAccountDestination: string = await userInput(
     "input destination account number: "
   );
@@ -122,67 +149,150 @@ async function transfer(account: Account) {
     return item.account.accountNumber === valAccountDestination;
   });
 
-  if (cardIndex <= 0) {
+  if (cardIndex < 0) {
     console.log("account not found, please try again...");
-    transfer(account);
+    return transfer(account, card);
   }
 
-  const valTransferAmount: number = await userInput("transfer amount ");
+  const accountByCard = cardAccountDatabase[cardIndex];
 
-  const selectedDestinationAccount = {
-    ...cardAccountDatabase[cardIndex].account,
-    balance: cardAccountDatabase[cardIndex].account.balance + valTransferAmount,
-  } as Account;
+  const valTransferAmount: string = await userInput("transfer amount: ");
+
+  if (!isBalanceMoreThanExpectedAmount(account, Number(valTransferAmount))) {
+    console.log(
+      "insufficent balance, you cannot transfer that amount right now."
+    );
+    return showMenu(account, card);
+  }
+
+  console.log();
+
+  confirm(
+    `Are you sure want to transfer ${valTransferAmount} to ${accountByCard?.account?.accountNumber} - ${accountByCard?.account.name}`,
+    function onCancel() {
+      console.log("Your last transaction is cancelled");
+      showMenu(account, card);
+    },
+    function onConfirm() {
+      const updatedAccount = { ...account };
+      const destinationAccount = { ...accountByCard.account };
+
+      updatedAccount.balance =
+        updatedAccount.balance - Number(valTransferAmount);
+      destinationAccount.balance =
+        destinationAccount.balance + Number(valTransferAmount);
+
+      console.log("Successfully transfer");
+
+      // update cardAccountDatabase
+      cardAccountDatabase[cardIndex].account = { ...destinationAccount };
+
+      showMenu(updatedAccount, card);
+    }
+  );
 }
 
 // bayar (payment)
-function payment(account: Account) {}
+async function payment(account: Account, card: AtmCard) {
+  // show payment list
+  console.log("\n ---- Bills ---- \n");
+  console.log("1. Electicity");
+  console.log("2. Internet and Phone");
+  console.log("3. Credit Card");
+  console.log("\n ------- \n");
+
+  // bills
+  const valSelectedBill: string = await userInput(
+    "Choose a service bill (1-3): "
+  );
+
+  const billIndex = Number(valSelectedBill) - 1;
+  const selectedBill: Bill = { ...billDatabase[billIndex] };
+
+  confirm(
+    `Are you sure want to pay: ${selectedBill.label}, amount: ${selectedBill.amount} (Y/n): `,
+    function onCancel() {
+      console.log("Your last transaction is canceled");
+      showMenu(account, card);
+    },
+    function onConfirm() {
+      if (!isBalanceMoreThanExpectedAmount(account, selectedBill.amount)) {
+        console.log("Your last transaction is canceled");
+        return showMenu(account, card);
+      }
+      const updatedAccount = {
+        ...account,
+        balance: account.balance - selectedBill.amount,
+      } as Account;
+      console.log("Payment success!");
+      showMenu(updatedAccount, card);
+    }
+  );
+}
 
 // ubah pin (changePin)
-function changePin(account: Account) {}
+async function changePin(account: Account, card: AtmCard) {
+  const valCurrentPin = await userInput("Input current PIN: ");
+  if (card.pin !== valCurrentPin) {
+    console.log("PIN is wrong. Your last transaction is cancelled");
+    return showMenu(account, card);
+  }
+
+  const valNewPin = await userInput("Input new PIN: ");
+  if (!`${valNewPin}`.match(/d/)) {
+    console.log("PIN must be numeric only. Your last transaction is cancelled");
+    return showMenu(account, card);
+  }
+
+  // update card database
+  const cardIndex = cardAccountDatabase.findIndex(
+    (item) => item.id === card.id
+  );
+  const selectedCard = { ...card, pin: valNewPin } as AtmCard;
+  cardAccountDatabase[cardIndex] = selectedCard;
+
+  console.log("Succesfully update new PIN");
+  showMenu(account, card);
+}
 
 // exit
 function exit() {
   rl.close();
 }
 
-async function showMenu(account: Account) {
+async function showMenu(account: Account, card: AtmCard) {
   console.log("\n-----------------");
   console.log("1. check balance");
   console.log("2. withdraw");
   console.log("3. transfer");
-  console.log("4. payment");
+  console.log("4. bill");
   console.log("5. change pin");
-  console.log("6. logout");
-  console.log("7. exit");
+  console.log("6. exit");
   console.log("-----------------\n");
 
   const selectedMenu: string = await userInput("Choose menu: ");
-  console.log("selected menu: ", selectedMenu);
 
   switch (selectedMenu) {
     case "1":
-      checkBalance(account);
+      checkBalance(account, card);
       break;
     case "2":
-      withdraw(account);
+      withdraw(account, card);
       break;
     case "3":
-      transfer(account);
+      transfer(account, card);
       break;
     case "4":
-      payment(account);
+      payment(account, card);
       break;
     case "5":
-      changePin(account);
+      changePin(account, card);
       break;
     case "6":
-      login();
-    case "7":
       exit();
       break;
     default:
-      showMenu(account);
+      showMenu(account, card);
       break;
   }
 }
@@ -193,6 +303,25 @@ async function userInput<T>(question: string): Promise<T> {
       resolve(value as T);
     });
   });
+}
+
+function isBalanceMoreThanExpectedAmount(
+  account: Account,
+  expectedAmount: number
+) {
+  return account.balance > expectedAmount;
+}
+
+async function confirm(
+  message: string,
+  onCancel: () => void,
+  onConfirm: () => void
+) {
+  const valConfirm: string = await userInput(message);
+  if (valConfirm.toLowerCase() !== "y") {
+    return onCancel();
+  }
+  onConfirm();
 }
 
 let loginAttempt: number = 0;
@@ -207,8 +336,11 @@ async function main() {
 
   const isAuthenticated = await login();
   if (isAuthenticated) {
-    const account = isAuthenticated as Account;
-    showMenu(account);
+    const { account, card } = isAuthenticated as {
+      account: Account;
+      card: AtmCard;
+    };
+    showMenu(account, card);
   } else {
     loginAttempt += 1;
     console.log(`your card number and pin is invalid. ${loginAttempt}`);
